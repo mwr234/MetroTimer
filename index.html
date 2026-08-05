@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Step-Up Pacer</title>
+<style>
+  :root{
+    --paper:#EEF1F4;
+    --ink:#16222E;
+    --ink-soft:#5A6B7B;
+    --line:#C6D0D9;
+    --work:#1F6F5C;
+    --rest:#4A5A78;
+    --brass:#C9A227;
+    --warm:#7A6E8F;
+    --mono:"SF Mono", ui-monospace, "JetBrains Mono", "Roboto Mono", Menlo, Consolas, monospace;
+    --sans:"Helvetica Neue", Inter, system-ui, -apple-system, Arial, sans-serif;
+    --state:var(--ink-soft);
+  }
+
+  *{box-sizing:border-box;}
+
+  html,body{height:100%;margin:0;}
+
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    display:flex;
+    justify-content:center;
+    padding:0;
+  }
+
+  body[data-phase="work"]{--state:var(--work);}
+  body[data-phase="rest"]{--state:var(--rest);}
+  body[data-phase="warmup"]{--state:var(--warm);}
+  body[data-phase="cooldown"]{--state:var(--warm);}
+  body[data-phase="done"]{--state:var(--work);}
+
+  .shell{
+    width:100%;
+    max-width:640px;
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+    padding:0 20px calc(20px + env(safe-area-inset-bottom));
+  }
+
+  /* ---- session progress strip: each segment is a real phase ---- */
+  .strip{
+    display:flex;
+    gap:2px;
+    height:6px;
+    margin:14px 0 18px;
+    flex:0 0 auto;
+  }
+  .strip span{
+    background:var(--line);
+    position:relative;
+    overflow:hidden;
+  }
+  .strip span::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:var(--ink);
+    transform:scaleX(var(--fill,0));
+    transform-origin:left;
+  }
+
+  .eyebrow{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    flex:0 0 auto;
+  }
+  .eyebrow b{color:var(--state);font-weight:700;}
+
+  /* ---- main readout ---- */
+  .stage{
+    flex:1 1 auto;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap:4px;
+    padding:10px 0;
+  }
+
+  .readout{margin-bottom:10px;}
+  .readout > span{
+    display:block;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  .clock{
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:clamp(64px,22vw,128px);
+    line-height:1;
+    font-variant-numeric:tabular-nums;
+    letter-spacing:-.045em;
+    margin-top:2px;
+  }
+
+  .roundrow{
+    display:flex;
+    align-items:flex-end;
+    gap:16px;
+  }
+  .roundcol{flex:0 0 auto;}
+  .lead{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    flex:1 1 auto;
+    min-width:0;
+    padding-bottom:10px;
+  }
+  .lead b{
+    flex:0 0 auto;
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:clamp(30px,8vw,46px);
+    line-height:1;
+    color:var(--state);
+    letter-spacing:-.03em;
+  }
+  .lead span{
+    flex:1 1 auto;
+    min-width:0;
+    font-size:12px;
+    font-weight:700;
+    line-height:1.35;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+
+  /* ---- signature: the four foot movements of one cycle ---- */
+  .cycle{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-top:26px;
+    border-top:1px solid var(--line);
+    padding-top:14px;
+  }
+  .beat{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:9px;
+    opacity:.34;
+  }
+  .beat i{
+    display:block;
+    width:100%;
+    height:10px;
+    background:var(--ink);
+    border-radius:1px;
+  }
+  .beat b{
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .beat[data-on="1"]{opacity:1;}
+  .beat[data-on="1"] i{background:var(--state);height:16px;margin-top:-6px;}
+  .beat[data-accent="1"] i{background:var(--brass);}
+  .beat[data-accent="1"] b{color:var(--brass);}
+
+  /* ---- controls ---- */
+  .controls{flex:0 0 auto;}
+
+  .row{display:flex;gap:10px;margin-top:12px;}
+
+  button{
+    font-family:var(--sans);
+    font-size:13px;
+    font-weight:700;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink);
+    background:transparent;
+    border:1.5px solid var(--ink);
+    border-radius:2px;
+    padding:16px 12px;
+    cursor:pointer;
+    min-height:52px;
+  }
+  button:focus-visible{outline:3px solid var(--brass);outline-offset:2px;}
+  button:active{transform:translateY(1px);}
+
+  .go{flex:2;background:var(--ink);color:var(--paper);}
+  .row .secondary{flex:1;}
+
+  .setting{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    border-top:1px solid var(--line);
+    padding:11px 0 2px;
+  }
+  .setting p{
+    margin:0;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  .setting p em{
+    display:block;
+    font-style:normal;
+    font-family:var(--mono);
+    font-size:16px;
+    letter-spacing:0;
+    color:var(--ink);
+    margin-top:3px;
+    text-transform:none;
+  }
+  .stepper{display:flex;gap:6px;flex:0 0 auto;}
+  .stepper button{padding:0;width:46px;min-height:46px;font-size:19px;letter-spacing:0;}
+  .lead-pick button{width:auto;padding:0 18px;}
+  .lead-pick button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+
+  .status{
+    font-size:11px;
+    border-top:1px solid var(--line);
+    padding-top:12px;
+    font-weight:600;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin:12px 0 0;
+    min-height:14px;
+  }
+  .status[data-warn="1"]{color:var(--brass);}
+
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none !important;}
+  }
+</style>
+</head>
+<body data-phase="idle">
+<div class="shell">
+
+  <div class="strip" id="strip"></div>
+
+  <div class="eyebrow">
+    <span id="phaseName">Ready</span>
+    <span id="roundName">80 bpm</span>
+  </div>
+
+  <div class="stage">
+    <div class="readout"><span>Time left</span><div class="clock" id="clock">0:00</div></div>
+    <div class="readout roundrow">
+      <div class="roundcol"><span id="roundLabel">Round</span><div class="clock" id="roundBig">1/6</div></div>
+      <div class="lead"><b id="leadChar">L</b><span id="leadWords"></span></div>
+    </div>
+
+    <div class="cycle" id="cycle">
+      <div class="beat" data-i="0"><i></i><b>Lead up</b></div>
+      <div class="beat" data-i="1"><i></i><b>Trail up</b></div>
+      <div class="beat" data-i="2"><i></i><b>Lead down</b></div>
+      <div class="beat" data-i="3"><i></i><b>Trail down</b></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="row">
+      <button class="go" id="go">Start</button>
+      <button class="secondary" id="skip">Skip</button>
+      <button class="secondary" id="reset">Reset</button>
+    </div>
+
+    <div class="setting">
+      <p>Cadence<em id="cadenceText">80 bpm &middot; 20 cycles/min</em></p>
+      <div class="stepper">
+        <button id="bpmDown" aria-label="Slower">&minus;</button>
+        <button id="bpmUp" aria-label="Faster">+</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <p>Volume<em id="volText">Level 4 of 5</em></p>
+      <div class="stepper">
+        <button id="volDown" aria-label="Quieter">&minus;</button>
+        <button id="volUp" aria-label="Louder">+</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <p>Rounds<em id="roundsText">6 &times; 60s work / 30s rest</em></p>
+      <div class="stepper">
+        <button id="rndDown" aria-label="Fewer rounds">&minus;</button>
+        <button id="rndUp" aria-label="More rounds">+</button>
+      </div>
+    </div>
+
+    <div class="setting">
+      <p>First lead leg<em id="leadText">Left leads round 1</em></p>
+      <div class="stepper lead-pick">
+        <button id="leadL" aria-pressed="true">L</button>
+        <button id="leadR" aria-pressed="false">R</button>
+      </div>
+    </div>
+
+    <p class="status" id="wakeStatus"></p>
+
+  </div>
+
+</div>
+
+<video id="nosleep" loop muted playsinline disableremoteplayback aria-hidden="true" tabindex="-1"
+       style="position:fixed;bottom:0;left:0;width:1px;height:1px;opacity:.01;pointer-events:none">
+  <source src="data:video/webm;base64,GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAHhEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggEeTbuMU6uEHFO7a1OsggHL7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjAuMTYuMTAwV0GNTGF2ZjYwLjE2LjEwMESJiECPQAAAAAAAFlSua8GuAQAAAAAAADjXgQFzxYgkSnX+uGPUbJyBACK1nIN1bmSIgQCGhVZfVlA4g4EBI+ODhDuaygDgibCBArqBApqBAhJUw2f8c3OgY8CAZ8iaRaOHRU5DT0RFUkSHjUxhdmY2MC4xNi4xMDBzc9ZjwItjxYgkSnX+uGPUbGfIoUWjh0VOQ09ERVJEh5RMYXZjNjAuMzEuMTAyIGxpYnZweGfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDEuMDAwMDAwMDAwAB9DtnWn54EAo6KBAACAEAIAnQEqAgACAAvHCIWFiJmEiD+CAAwNYAD+5rUAHFO7a5G7j7OBALeK94EB8YIBn/CBAw==" type="video/webm">
+  <source src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMXbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAA+gAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAkF0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAA+gAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAIAAAACAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAPoAAAAAAABAAAAAAG5bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAQABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABZG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASRzdGJsAAAAwHN0c2QAAAAAAAAAAQAAALBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAIAAgBIAAAASAAAAAAAAAABFUxhdmM2MC4zMS4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANmF2Y0MBZAAK/+EAGWdkAAqs2V+IiMBEAAADAAQAAAMACDxIllgBAAZo6+BlLIv9+PgAAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAFhAAABYQAAAAGHN0dHMAAAAAAAAAAQAAAAEAAEAAAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAABAAAAAQAAABRzdHN6AAAAAAAAAsIAAAABAAAAFHN0Y28AAAAAAAAAAQAAA0cAAABidWR0YQAAAFptZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAAC1pbHN0AAAAJal0b28AAAAdZGF0YQAAAAEAAAAATGF2ZjYwLjE2LjEwMAAAAAhmcmVlAAACym1kYXQAAAKtBgX//6ncRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgzOjB4MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMgYl9weXJhbWlkPTIgYl9hZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MSBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTQwIHJjPWNyZiBtYnRyZWU9MSBjcmY9NTEuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAAAA1liIQAFf8SC1v/hIp/" type="video/mp4">
+</video>
+
+<script>
+(function(){
+  "use strict";
+
+  var WARMUP=120, WORK=60, REST=30, COOLDOWN=120;
+
+  var bpm=80, rounds=6, startLeg=0;      // 0 = left, 1 = right
+  var phases=[], idx=0, elapsed=0, running=false;
+  var ctx=null, master=null, anchor=0, beatN=0, nextBeat=0, schedId=null, wakeLock=null;
+  var VOL=[0.35,0.6,1.0,1.5,2.1], vol=3;
+  var lastBlip=-1;
+
+  var el=function(id){return document.getElementById(id);};
+  var body=document.body;
+  var beats=Array.prototype.slice.call(document.querySelectorAll('.beat'));
+
+  function buildPhases(){
+    phases=[{t:'warmup',d:WARMUP}];
+    for(var r=1;r<=rounds;r++){
+      phases.push({t:'work',d:WORK,r:r});
+      if(r<rounds) phases.push({t:'rest',d:REST,r:r});
+    }
+    phases.push({t:'cooldown',d:COOLDOWN});
+    drawStrip();
+  }
+
+  function drawStrip(){
+    var total=phases.reduce(function(s,p){return s+p.d;},0);
+    var s=el('strip');
+    s.innerHTML='';
+    phases.forEach(function(p){
+      var seg=document.createElement('span');
+      seg.style.flex=p.d/total;
+      s.appendChild(seg);
+    });
+  }
+
+  function legFor(round){ return (startLeg+round-1)%2===0 ? 'L' : 'R'; }
+  function legWord(c){ return c==='L' ? 'Left' : 'Right'; }
+  function spb(){ return 60/bpm; }
+
+  /* ---------- audio ---------- */
+  function tone(at,freq,peak,dur,type){
+    if(!ctx) return;
+    var o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type||'sine';
+    o.frequency.setValueAtTime(freq,at);
+    g.gain.setValueAtTime(0.0001,at);
+    g.gain.exponentialRampToValueAtTime(peak,at+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+    o.connect(g); g.connect(master);
+    o.start(at); o.stop(at+dur+0.03);
+  }
+
+  function cue(kind){
+    if(!ctx) return;
+    var t=ctx.currentTime+0.01;
+    if(kind==='work'){ tone(t,660,0.35,0.13); tone(t+0.15,990,0.35,0.22); }
+    else if(kind==='rest'){ tone(t,330,0.3,0.35); }
+    else if(kind==='blip'){ tone(t,880,0.22,0.07,'square'); }
+    else if(kind==='done'){ tone(t,523,0.3,0.2); tone(t+0.22,659,0.3,0.2); tone(t+0.44,784,0.3,0.5); }
+  }
+
+  function scheduler(){
+    if(!running||!ctx) return;
+    var p=phases[idx];
+    if(!p||p.t!=='work') return;
+    while(nextBeat < ctx.currentTime+0.12){
+      var accent = beatN%4===0;
+      tone(nextBeat, accent?1245:830, accent?0.45:0.26, accent?0.11:0.07, 'triangle');
+      beatN++;
+      nextBeat = anchor + beatN*spb();
+    }
+  }
+
+  /* ---------- clock ---------- */
+  function now(){ return ctx ? ctx.currentTime : 0; }
+
+  function enterPhase(i){
+    idx=i;
+    elapsed=0;
+    anchor=now();
+    beatN=0;
+    nextBeat=anchor;
+    lastBlip=-1;
+    var p=phases[idx];
+    if(!p){ finish(); return; }
+    cue(p.t==='work' ? 'work' : 'rest');
+  }
+
+  function finish(){
+    running=false;
+    body.dataset.phase='done';
+    el('go').textContent='Start';
+    el('phaseName').textContent='Session complete';
+    el('leadChar').textContent='\u2713';
+    el('leadWords').textContent='Well done';
+    el('clock').textContent='0:00';
+    el('roundLabel').textContent='Rounds done';
+    el('roundBig').textContent=rounds+'/'+rounds;
+    beats.forEach(function(b){b.dataset.on='0';b.dataset.accent='0';});
+    cue('done');
+    releaseLock();
+  }
+
+  function tick(){
+    requestAnimationFrame(tick);
+    if(!running) return;
+
+    var p=phases[idx];
+    if(!p) return;
+    elapsed = now()-anchor;
+
+    if(elapsed>=p.d){
+      if(idx+1>=phases.length){ finish(); return; }
+      enterPhase(idx+1);
+      p=phases[idx];
+      elapsed=0;
+    }
+
+    var left=Math.max(0,p.d-elapsed);
+    var secs=Math.ceil(left);
+
+    // 3-2-1 into the next work block
+    if(p.t!=='work' && p.t!=='cooldown' && secs<=3 && secs>0 && secs!==lastBlip){
+      lastBlip=secs; cue('blip');
+    }
+
+    el('clock').textContent=Math.floor(secs/60)+':'+String(secs%60).padStart(2,'0');
+    paintStrip(p);
+    paintPhase(p);
+    paintBeats(p);
+  }
+
+  function paintStrip(p){
+    var segs=el('strip').children;
+    for(var i=0;i<segs.length;i++){
+      segs[i].style.setProperty('--fill', i<idx?1 : (i===idx? Math.min(1,elapsed/p.d) : 0));
+    }
+  }
+
+  function paintPhase(p){
+    body.dataset.phase=p.t;
+    var ch=el('leadChar'), w=el('leadWords');
+    el('phaseName').textContent={warmup:'Warm-up',work:'Work',rest:'Rest',cooldown:'Cool-down'}[p.t];
+    el('roundName').textContent=bpm+' bpm';
+
+    if(p.t==='work'){
+      el('roundLabel').textContent='Round';
+      el('roundBig').textContent=p.r+'/'+rounds;
+      ch.textContent=legFor(p.r);
+      w.textContent=legWord(legFor(p.r))+' leg leads';
+    } else if(p.t==='rest'){
+      var nx=legFor(p.r+1);
+      el('roundLabel').textContent='Next round';
+      el('roundBig').textContent=(p.r+1)+'/'+rounds;
+      ch.textContent=nx;
+      w.textContent='Next: '+legWord(nx)+' leg leads';
+    } else if(p.t==='warmup'){
+      el('roundLabel').textContent='Next round';
+      el('roundBig').textContent='1/'+rounds;
+      ch.textContent='\u2192';
+      w.textContent='March, then easy steps';
+    } else {
+      el('roundLabel').textContent='Rounds done';
+      el('roundBig').textContent=rounds+'/'+rounds;
+      ch.textContent='\u2193';
+      w.textContent='Walk it off';
+    }
+  }
+
+  function paintBeats(p){
+    if(p.t!=='work'){
+      beats.forEach(function(b){b.dataset.on='0';b.dataset.accent='0';});
+      return;
+    }
+    var lead=legFor(p.r), trail=lead==='L'?'R':'L';
+    var words=[lead+' up',trail+' up',lead+' down',trail+' down'];
+    var cur=Math.floor(elapsed/spb())%4;
+    beats.forEach(function(b,i){
+      b.dataset.on = i===cur?'1':'0';
+      b.dataset.accent = (i===0&&i===cur)?'1':'0';
+      b.querySelector('b').textContent=words[i];
+    });
+  }
+
+  /* ---------- wake lock ---------- */
+  function setWake(msg,warn){
+    var n=el('wakeStatus');
+    n.textContent=msg;
+    n.dataset.warn=warn?'1':'0';
+  }
+
+  function videoFallback(){
+    var v=el('nosleep');
+    try{
+      var p=v.play();
+      if(p&&p.then){
+        p.then(function(){ setWake('Screen stays on during the session.',false); })
+         .catch(function(){ setWake('Screen may sleep \u2014 set your display timeout to 30 minutes.',true); });
+      } else {
+        setWake('Screen stays on during the session.',false);
+      }
+    }catch(e){
+      setWake('Screen may sleep \u2014 set your display timeout to 30 minutes.',true);
+    }
+  }
+
+  function requestLock(){
+    if(wakeLock) return;
+    try{
+      if(navigator.wakeLock && navigator.wakeLock.request){
+        navigator.wakeLock.request('screen').then(function(l){
+          wakeLock=l;
+          l.addEventListener('release',function(){ wakeLock=null; });
+          setWake('Screen stays on during the session.',false);
+        }).catch(videoFallback);
+        return;
+      }
+    }catch(e){}
+    videoFallback();
+  }
+
+  function releaseLock(){
+    try{ if(wakeLock){ wakeLock.release(); wakeLock=null; } }catch(e){}
+    try{ el('nosleep').pause(); }catch(e){}
+    setWake('',false);
+  }
+
+  /* ---------- controls ---------- */
+  function ensureCtx(){
+    if(!ctx){
+      var AC=window.AudioContext||window.webkitAudioContext;
+      ctx=new AC();
+      master=ctx.createGain();
+      master.gain.value=VOL[vol];
+      var comp=ctx.createDynamicsCompressor();
+      comp.threshold.value=-3;
+      comp.ratio.value=20;
+      comp.attack.value=0.002;
+      comp.release.value=0.1;
+      master.connect(comp);
+      comp.connect(ctx.destination);
+      schedId=setInterval(scheduler,25);
+    }
+    if(ctx.state==='suspended') ctx.resume();
+  }
+
+  function previewTick(){
+    ensureCtx();
+    tone(ctx.currentTime+0.01,1245,0.45,0.11,'triangle');
+  }
+
+  function skip(){
+    if(body.dataset.phase==='idle'||body.dataset.phase==='done') return;
+    if(idx+1>=phases.length){ finish(); return; }
+    enterPhase(idx+1);
+  }
+
+  function start(){
+    ensureCtx();
+
+    if(body.dataset.phase==='idle'||body.dataset.phase==='done'){
+      buildPhases();
+      running=true;
+      enterPhase(0);
+    } else {
+      running=true;
+      anchor=now()-elapsed;
+      beatN=Math.ceil(elapsed/spb());
+      nextBeat=anchor+beatN*spb();
+    }
+    el('go').textContent='Pause';
+    requestLock();
+  }
+
+  function pause(){
+    running=false;
+    el('go').textContent='Resume';
+    releaseLock();
+  }
+
+  function reset(){
+    running=false;
+    body.dataset.phase='idle';
+    idx=0; elapsed=0;
+    buildPhases();
+    el('go').textContent='Start';
+    el('phaseName').textContent='Ready';
+    el('roundName').textContent=bpm+' bpm';
+    el('leadChar').textContent=legFor(1);
+    el('leadWords').textContent='';
+    el('clock').textContent='0:00';
+    el('roundLabel').textContent='Round';
+    el('roundBig').textContent='1/'+rounds;
+    beats.forEach(function(b){b.dataset.on='0';b.dataset.accent='0';});
+    Array.prototype.forEach.call(el('strip').children,function(s){s.style.setProperty('--fill',0);});
+    releaseLock();
+  }
+
+  function labels(){
+    el('cadenceText').innerHTML=bpm+' bpm &middot; '+(bpm/4)+' cycles/min';
+    el('roundsText').innerHTML=rounds+' &times; 60s work / 30s rest';
+    el('volText').textContent='Level '+(vol+1)+' of '+VOL.length;
+    el('leadText').textContent=legWord(legFor(1))+' leads round 1';
+    if(!running&&body.dataset.phase==='idle'){
+      el('roundName').textContent=bpm+' bpm';
+      el('roundBig').textContent='1/'+rounds;
+      el('leadChar').textContent=legFor(1);
+    }
+  }
+
+  el('go').addEventListener('click',function(){ running?pause():start(); });
+  el('reset').addEventListener('click',reset);
+
+  function setVol(v){
+    vol=Math.max(0,Math.min(VOL.length-1,v));
+    if(master) master.gain.value=VOL[vol];
+    labels();
+    previewTick();
+  }
+  el('volUp').addEventListener('click',function(){ setVol(vol+1); });
+  el('volDown').addEventListener('click',function(){ setVol(vol-1); });
+
+  el('skip').addEventListener('click',skip);
+
+  el('bpmUp').addEventListener('click',function(){ bpm=Math.min(140,bpm+4); labels(); previewTick(); });
+  el('bpmDown').addEventListener('click',function(){ bpm=Math.max(60,bpm-4); labels(); previewTick(); });
+  el('rndUp').addEventListener('click',function(){ rounds=Math.min(12,rounds+1); buildPhases(); labels(); });
+  el('rndDown').addEventListener('click',function(){ rounds=Math.max(2,rounds-1); buildPhases(); labels(); });
+
+  el('leadL').addEventListener('click',function(){
+    startLeg=0; el('leadL').setAttribute('aria-pressed','true'); el('leadR').setAttribute('aria-pressed','false'); labels();
+  });
+  el('leadR').addEventListener('click',function(){
+    startLeg=1; el('leadR').setAttribute('aria-pressed','true'); el('leadL').setAttribute('aria-pressed','false'); labels();
+  });
+
+  document.addEventListener('keydown',function(e){
+    if(e.code==='Space'){ e.preventDefault(); running?pause():start(); }
+  });
+
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden && running) requestLock();
+  });
+
+  buildPhases();
+  labels();
+  reset();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
