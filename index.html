@@ -407,8 +407,14 @@
     var p=phases[idx];
     if(!p||p.t!=='work') return;
     while(nextBeat < ctx.currentTime+0.12){
-      var accent = beatN%4===0;
-      tone(nextBeat, accent?1245:830, accent?0.45:0.26, accent?0.11:0.07, 'triangle');
+      var end = anchor + p.d;
+      var lastThree = (end - nextBeat) <= 3*spb() + 0.001 && nextBeat < end;
+      if(lastThree){
+        tone(nextBeat, 1760, 0.5, 0.14, 'square');
+      } else {
+        var accent = beatN%4===0;
+        tone(nextBeat, accent?1245:830, accent?0.45:0.26, accent?0.11:0.07, 'triangle');
+      }
       beatN++;
       nextBeat = anchor + beatN*spb();
     }
